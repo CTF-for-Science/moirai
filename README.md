@@ -1,5 +1,9 @@
 <div align="center">
 
+# CTF Notes
+
+Environment: Use python 3.10 and follow instructions below.
+
 # Unified Training of Universal Time Series Transformers
 
 [![arXiv](https://img.shields.io/badge/Moirai-2402.02592-b31b1b.svg)](https://arxiv.org/abs/2402.02592)
