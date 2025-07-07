@@ -6,13 +6,13 @@ cmd_template = \
 """\
 #!/bin/bash
 
-#SBATCH --account=amath
+#SBATCH --account={account}
 #SBATCH --partition={partition}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gpus=0
 #SBATCH --mem={memory}G
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=4
 #SBATCH --time=1-00:00:00
 #SBATCH --nice=0
 
@@ -25,7 +25,6 @@ cmd_template = \
 identifier={identifier}
 
 repo="/mmfs1/home/alexeyy/storage/CTF-for-Science/models/moirai"
-datasets="/mmfs1/home/alexeyy/storage/data"
 
 recon_ctx={recon_ctx}
 dataset={dataset}
@@ -36,7 +35,7 @@ echo "Running Apptainer"
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-apptainer run --nv --cwd "/app/code" --bind "$repo":"/app/code" gpu.sif python -u /app/code/ctf/forecast_ctf.py --dataset $dataset --pair_id $pair_id --validation $validation --identifier $identifier
+apptainer run --nv --cwd "/app/code" --bind "$repo":"/app/code" "$repo"/apptainer/gpu.sif python -u /app/code/ctf/forecast_ctf.py --dataset $dataset --pair_id $pair_id --validation $validation --identifier $identifier
 
 echo "Finished running Apptainer"
 
@@ -54,20 +53,21 @@ slurm_dir = top_dir / 'slurms'
 for file in slurm_dir.glob('*.slurm'):
     file.unlink()
 
-datasets = ["ODE_Lorenz", "PDE_KS", "KS_Official", "Lorenz_Official"]
+datasets = ["KS_Official", "Lorenz_Official", "ODE_Lorenz", "PDE_KS"]
 pair_ids = [1, 2, 3, 4, 5, 6, 7, 8, 9]
-validations = [True, False]
+validations = [0, 1]
 recon_ctxs = [20]
+account = "amath"
 partition = "cpu-g2"
-memory = 64
+memory = 256
 
 skip_count = 0
 write_count = 0
 total_count = 0
 
-for dataset in datasets:
-    for pair_id in pair_ids:
-        for validation in validations:
+for validation in validations:
+    for dataset in datasets:
+        for pair_id in pair_ids:
             for recon_ctx in recon_ctxs:
                 identifier = f"{dataset}_p{pair_id}_v{validation:d}_r{recon_ctx}"
 
@@ -78,6 +78,7 @@ for dataset in datasets:
                     recon_ctx=recon_ctx,
                     identifier=identifier,
                     partition=partition,
+                    account=account,
                     memory=memory,
                 )
 

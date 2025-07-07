@@ -1,15 +1,16 @@
 # Run with:
-# apptainer run --nv --bind "/mmfs1/home/alexeyy/storage/CTF-for-Science/models/moirai":"/app/code" gpu.sif python -u /app/code/example/forecast_ctf.py --dataset ODE_Lorenz --pair_id 1 --validation
 # python forecast_ctf.py --dataset ODE_Lorenz --pair_id 1 --validation
+#  apptainer run --nv --cwd "/app/code" --bind "/mmfs1/home/alexeyy/storage/CTF-for-Science/models/moirai":"/app/code" /mmfs1/home/alexeyy/storage/CTF-for-Science/models/moirai/apptainer/gpu.sif python -u /app/code/ctf/forecast_ctf.py --dataset ODE_Lorenz --pair_id 1 --validation 0 --identifier lorenz_1
 
 # ## Imports
 
+import time
 import torch
 import pickle
 import argparse
 import numpy as np
+import pprint as pp
 import pandas as pd
-import time
 from pathlib import Path
 import matplotlib.pyplot as plt
 from gluonts.dataset.multivariate_grouper import MultivariateGrouper
@@ -30,7 +31,7 @@ pickle_dir.mkdir(parents=True, exist_ok=True)
 def main(args=None):
     # ## Model Parameters
 
-    print("Setting up model parameters")
+    print("> Setting up model parameters")
 
     MODEL = "moirai-moe"  # model name: choose from {'moirai', 'moirai-moe'}
     SIZE = "small"  # model size: choose from {'small', 'base', 'large'}
@@ -50,7 +51,7 @@ def main(args=None):
     validation = args.validation
     recon_ctx = args.recon_ctx # Context length for reconstruction
 
-    print("Setting up training data")
+    print("> Setting up training data")
 
     md = get_metadata(dataset)
 
@@ -68,103 +69,117 @@ def main(args=None):
     # Perform pair_id specific operations
     if pair_id in [2, 4]:
         # Reconstruction
-        print(f"Reconstruction task, using {recon_ctx} context length")
+        print(f"> Reconstruction task, using {recon_ctx} context length")
         train_mat = train_data[0]
         train_mat = train_mat[0:recon_ctx,:]
         forecast_length = forecast_length - recon_ctx
         df = pd.DataFrame(train_mat)
     elif pair_id in [1, 3, 5, 6, 7]:
         # Forecast
-        print(f"Forecasting task, using {forecast_length} forecast length")
+        print(f"> Forecasting task, using {forecast_length} forecast length")
         train_mat = train_data[0]
         df = pd.DataFrame(train_mat)
     elif pair_id in [8, 9]:
         # Burn-in
-        print(f"Burn-in matrix of size {init_data.shape[0]}, using {forecast_length} forecast length")
+        print(f"> Burn-in matrix of size {init_data.shape[0]}, using {forecast_length} forecast length")
         train_mat = init_data
+        forecast_length = forecast_length - init_data.shape[0]
         df = pd.DataFrame(train_mat)
     else:
         raise ValueError(f"Pair id {pair_id} not supported")
 
     # Model variables
-    PDT = forecast_length
-    CTX = df.shape[0]
-    TEST = PDT
+    PDT = 10
+    CTX = min(df.shape[0], 200)
+    TEST = 10
 
-    if 0: # Debugging
-        PDT = 100
-        CTX = 20
-        TEST = PDT
+    print("> Model variables:")
+    print(f"  PDT: {PDT}")
+    print(f"  CTX: {CTX}")
+    print(f"  TEST: {TEST}")
 
-    # Append TEST (forecast_length) of zeros to each column of the dataset
-    df = pd.concat([df, pd.DataFrame(0.*np.ones((TEST, df.shape[1])), columns=df.columns)], axis=0)
+    # Loop until we have forecast_length data points
+    forecast_loops = forecast_length // PDT + (forecast_length % PDT > 0)
+    raw_preds = []
+    for i in range(forecast_loops):
+        print(f"> ({i+1}/{forecast_loops}) Input Shape:", df.shape)
 
-    # Create DateTimeIndex starting from 0 seconds with delta_t intervals
-    start_time = pd.Timestamp('2020-01-01')  
-    timestamps = pd.date_range(start=start_time, 
-                                periods=len(df),
-                                freq=f'{delta_t}S')
-    df.index = timestamps
+        # Append TEST (forecast_length) of zeros to each column of the dataset
+        df_test = pd.concat([df, pd.DataFrame(0.*np.ones((TEST, df.shape[1])), columns=df.columns)], axis=0)
 
-    # Convert into GluonTS dataset with frequency in seconds
-    ds = PandasDataset(dict(df), freq=f'{delta_t}S')
+        # Create DateTimeIndex starting from 0 seconds with delta_t intervals
+        start_time = pd.Timestamp('2020-01-01')  
+        timestamps = pd.date_range(start=start_time, 
+                                    periods=len(df_test),
+                                    freq=f'{delta_t}S')
+        df_test.index = timestamps
 
-    # ## Run Model
+        # Convert into GluonTS dataset with frequency in seconds
+        ds = PandasDataset(dict(df_test), freq=f'{delta_t}S')
 
-    print("Setting up model dataset")
+        # ## Run Model
 
-    # Group time series into multivariate dataset
-    grouper = MultivariateGrouper(len(ds))
-    multivar_ds = grouper(ds)
+        # Group time series into multivariate dataset
+        grouper = MultivariateGrouper(len(ds))
+        multivar_ds = grouper(ds)
 
-    # Split into train/test set
-    _, test_template = split(
-        multivar_ds, offset=-TEST
-    )  # assign last TEST time steps as test set
+        # Split into train/test set
+        _, test_template = split(
+            multivar_ds, offset=-TEST
+        )  # assign last TEST time steps as test set
 
-    # Construct rolling window evaluation
-    test_data = test_template.generate_instances(
-        prediction_length=PDT,  # number of time steps for each prediction
-        windows=TEST // PDT,  # number of windows in rolling window evaluation
-        distance=PDT,  # number of time steps between each window - distance=PDT for non-overlapping windows
-    )
-
-    # Prepare model
-    if MODEL == "moirai":
-        model = MoiraiForecast(
-            module=MoiraiModule.from_pretrained(f"Salesforce/moirai-1.1-R-small"),
-            prediction_length=PDT,
-            context_length=CTX,
-            patch_size=PSZ,
-            num_samples=100,
-            target_dim=len(ds),
-            feat_dynamic_real_dim=ds.num_feat_dynamic_real,
-            past_feat_dynamic_real_dim=ds.num_past_feat_dynamic_real,
-        )
-    elif MODEL == "moirai-moe":
-        model = MoiraiMoEForecast(
-            module=MoiraiMoEModule.from_pretrained(f"Salesforce/moirai-moe-1.0-R-small"),
-            prediction_length=PDT,
-            context_length=CTX,
-            patch_size=16,
-            num_samples=100,
-            target_dim=len(ds),
-            feat_dynamic_real_dim=ds.num_feat_dynamic_real,
-            past_feat_dynamic_real_dim=ds.num_past_feat_dynamic_real,
+        # Construct rolling window evaluation
+        test_data = test_template.generate_instances(
+            prediction_length=PDT,  # number of time steps for each prediction
+            windows=TEST // PDT,  # number of windows in rolling window evaluation
+            distance=PDT,  # number of time steps between each window - distance=PDT for non-overlapping windows
         )
 
-    print("Forecasting")
+        # Prepare model
+        if MODEL == "moirai":
+            model = MoiraiForecast(
+                module=MoiraiModule.from_pretrained(f"Salesforce/moirai-1.1-R-small"),
+                prediction_length=PDT,
+                context_length=CTX,
+                patch_size=PSZ,
+                num_samples=100,
+                target_dim=len(ds),
+                feat_dynamic_real_dim=ds.num_feat_dynamic_real,
+                past_feat_dynamic_real_dim=ds.num_past_feat_dynamic_real,
+            )
+        elif MODEL == "moirai-moe":
+            model = MoiraiMoEForecast(
+                module=MoiraiMoEModule.from_pretrained(f"Salesforce/moirai-moe-1.0-R-small"),
+                prediction_length=PDT,
+                context_length=CTX,
+                patch_size=16,
+                num_samples=100,
+                target_dim=len(ds),
+                feat_dynamic_real_dim=ds.num_feat_dynamic_real,
+                past_feat_dynamic_real_dim=ds.num_past_feat_dynamic_real,
+            )
 
-    # ## Forecast
-    predictor = model.create_predictor(batch_size=BSZ, device='auto')
-    forecasts = predictor.predict(test_data.input)
+        # ## Forecast
+        predictor = model.create_predictor(batch_size=BSZ, device='auto')
+        forecasts = predictor.predict(test_data.input)
 
-    # ## Create Prediction Matrix
-    forecast_it = iter(forecasts)
-    forecast = next(forecast_it)
-    raw_pred = forecast.quantile(0.5)
+        # ## Create Prediction Matrix
+        forecast_it = iter(forecasts)
+        forecast = next(forecast_it)
+        raw_pred = forecast.quantile(0.5)
+        raw_preds.append(raw_pred)
 
-    print("Creating prediction matrix")
+        # ## Append to df
+        df = pd.concat([df, pd.DataFrame(raw_pred, columns=df.columns)], axis=0)
+
+        # Delete variables
+        del model, predictor, forecasts, test_data, test_template, grouper, multivar_ds, forecast_it, forecast, raw_pred
+
+    raw_pred = np.concatenate(raw_preds, axis=0)
+    raw_pred = raw_pred[0:forecast_length, :]
+    print("> Concatenated Shape", raw_pred.shape)
+
+    print("> Creating prediction matrix")
 
     # Perform pair_id specific operations
     if pair_id in [2, 4]:
@@ -180,9 +195,12 @@ def main(args=None):
     else:
         raise ValueError(f"Pair id {pair_id} not supported") 
 
-    print("Predicted Matrix Shape:", pred.shape)
+    print("> Predicted Matrix Shape:", pred.shape)
+    
     if args.validation:
-        print("Expected Shape: ", val_data.shape)
+        print("> Expected Shape: ", val_data.shape)
+    else:
+        print("> Expected Shape: ", md['matrix_shapes'][f'X{pair_id}test.mat'])
 
     # ## Save prediction matrix
     with open(pickle_dir / f"{args.identifier}.pkl", "wb") as f:
@@ -195,8 +213,12 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str, default=None, help="Dataset to run (ODE_Lorenz or PDE_KS)")
     parser.add_argument('--pair_id', type=int, default=1, help="Pair_id to run (1-9)")
     parser.add_argument('--recon_ctx', type=int, default=20, help="Context length for reconstruction")
-    parser.add_argument('--validation', type=bool, default=False, help="Generate and use validation set")
+    parser.add_argument('--validation', type=int, default=0, help="Generate and use validation set")
     args = parser.parse_args()
+
+    # Args
+    print("> Args:")
+    pp.pprint(vars(args), indent=2)
 
     # Start timing
     start_time = time.time()
@@ -212,5 +234,5 @@ if __name__ == '__main__':
     minutes = int((duration % 3600) // 60)
     seconds = int(duration % 60)
     
-    print(f"\nTotal execution time: {hours:02d}:{minutes:02d}:{seconds:02d}")
+    print(f"> Total execution time: {hours:02d}:{minutes:02d}:{seconds:02d}")
         

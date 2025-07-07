@@ -4,6 +4,8 @@
 
 Environment: Use python 3.10 and follow instructions below.
 
+Code for CTF is in the `ctf` folder.
+
 # Unified Training of Universal Time Series Transformers
 
 [![arXiv](https://img.shields.io/badge/Moirai-2402.02592-b31b1b.svg)](https://arxiv.org/abs/2402.02592)
