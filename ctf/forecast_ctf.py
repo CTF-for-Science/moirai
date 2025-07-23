@@ -210,7 +210,7 @@ if __name__ == '__main__':
     # To allow CLIs
     parser = argparse.ArgumentParser()
     parser.add_argument('--identifier', type=str, default=None, required=True, help="Identifier for the run")
-    parser.add_argument('--dataset', type=str, default=None, help="Dataset to run (ODE_Lorenz or PDE_KS)")
+    parser.add_argument('--dataset', type=str, default=None, required=True, help="Dataset to run (ODE_Lorenz or PDE_KS)")
     parser.add_argument('--pair_id', type=int, default=1, help="Pair_id to run (1-9)")
     parser.add_argument('--recon_ctx', type=int, default=20, help="Context length for reconstruction")
     parser.add_argument('--validation', type=int, default=0, help="Generate and use validation set")
