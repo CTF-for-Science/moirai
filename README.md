@@ -2,9 +2,8 @@
 
 # CTF Notes
 
-Environment: Use python 3.10 and follow instructions below.
-
-Code for CTF is in the `ctf` folder.
+Environment: Use python 3.10 and follow instructions below (`pip install -e .`).  
+Code for CTF is in the `ctf` folder.  
 
 # Unified Training of Universal Time Series Transformers
 

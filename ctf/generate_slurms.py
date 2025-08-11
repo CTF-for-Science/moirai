@@ -53,9 +53,9 @@ slurm_dir = top_dir / 'slurms'
 for file in slurm_dir.glob('*.slurm'):
     file.unlink()
 
-datasets = ["KS_Official", "Lorenz_Official", "ODE_Lorenz", "PDE_KS"]
+datasets = ["KS_Official", "Lorenz_Official"]
 pair_ids = [1, 2, 3, 4, 5, 6, 7, 8, 9]
-validations = [0, 1]
+validations = [0]
 recon_ctxs = [20]
 account = "amath"
 partition = "cpu-g2"

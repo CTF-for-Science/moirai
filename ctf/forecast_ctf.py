@@ -34,7 +34,7 @@ def main(args=None):
     print("> Setting up model parameters")
 
     MODEL = "moirai-moe"  # model name: choose from {'moirai', 'moirai-moe'}
-    SIZE = "small"  # model size: choose from {'small', 'base', 'large'}
+    SIZE = "base"  # model size: choose from {'small', 'base', 'large'}
     #PDT = 20  # prediction length: any positive integer
     #CTX = 200  # context length: any positive integer
     PSZ = "auto"  # patch size: choose from {"auto", 8, 16, 32, 64, 128}
@@ -138,7 +138,7 @@ def main(args=None):
         # Prepare model
         if MODEL == "moirai":
             model = MoiraiForecast(
-                module=MoiraiModule.from_pretrained(f"Salesforce/moirai-1.1-R-small"),
+                module=MoiraiModule.from_pretrained(f"Salesforce/moirai-1.1-R-base"),
                 prediction_length=PDT,
                 context_length=CTX,
                 patch_size=PSZ,
@@ -149,7 +149,7 @@ def main(args=None):
             )
         elif MODEL == "moirai-moe":
             model = MoiraiMoEForecast(
-                module=MoiraiMoEModule.from_pretrained(f"Salesforce/moirai-moe-1.0-R-small"),
+                module=MoiraiMoEModule.from_pretrained(f"Salesforce/moirai-moe-1.0-R-base"),
                 prediction_length=PDT,
                 context_length=CTX,
                 patch_size=16,
