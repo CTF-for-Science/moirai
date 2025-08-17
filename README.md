@@ -2,8 +2,17 @@
 
 # CTF Notes
 
-Environment: Use python 3.10 and follow instructions below (`pip install -e .`).  
 Code for CTF is in the `ctf` folder.  
+
+```bash
+pyenv install 3.10.13
+pyenv local 3.10.13
+python -m venv ~/.virtualenvs/llmtime
+source ~/.virtualenvs/llmtime/bin/activate
+pip install .
+cd ../../
+pip install -e .[all]
+```
 
 # Unified Training of Universal Time Series Transformers
 
