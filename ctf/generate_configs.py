@@ -8,13 +8,13 @@ config_template = \
   pair_id:
   - {pair_id}
 model:
-  name: llmtime
+  name: moirai
   recon_ctx: 20
   validation: 0
 """
 
 # Define the datasets and pair_ids
-datasets = ["KS_Official", "Lorenz_Official"]
+datasets = ["KS_Official", "Lorenz_Official", "seismo"]
 pair_ids = list(range(1, 10))  # 1-9
 
 # Get the directory where this script is located

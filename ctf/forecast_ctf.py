@@ -90,7 +90,7 @@ def main(args=None):
 
     # Model variables
     PDT = 10
-    CTX = min(df.shape[0], 200)
+    CTX = min(df.shape[0], recon_ctx)
     TEST = 10
 
     print("> Model variables:")
@@ -160,7 +160,7 @@ def main(args=None):
             )
 
         # ## Forecast
-        predictor = model.create_predictor(batch_size=BSZ, device='auto')
+        predictor = model.create_predictor(batch_size=BSZ, device=args.device)
         forecasts = predictor.predict(test_data.input)
 
         # ## Create Prediction Matrix
@@ -200,7 +200,10 @@ def main(args=None):
     if args.validation:
         print("> Expected Shape: ", val_data.shape)
     else:
-        print("> Expected Shape: ", md['matrix_shapes'][f'X{pair_id}test.mat'])
+        if dataset in ['seismo']:
+            print("> Expected Shape: ", md['matrix_shapes'][f'X{pair_id}test.npz'])
+        else:
+            print("> Expected Shape: ", md['matrix_shapes'][f'X{pair_id}test.mat'])
 
     # ## Save prediction matrix
     with open(pickle_dir / f"{args.identifier}.pkl", "wb") as f:
@@ -214,6 +217,7 @@ if __name__ == '__main__':
     parser.add_argument('--pair_id', type=int, default=1, help="Pair_id to run (1-9)")
     parser.add_argument('--recon_ctx', type=int, default=20, help="Context length for reconstruction")
     parser.add_argument('--validation', type=int, default=0, help="Generate and use validation set")
+    parser.add_argument('--device', type=str, default='cpu', help="Device to run on (cpu, cuda:0, ...)")
     args = parser.parse_args()
 
     # Args

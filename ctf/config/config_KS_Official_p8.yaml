@@ -3,6 +3,6 @@ dataset:
   pair_id:
   - 8
 model:
-  name: llmtime
+  name: moirai
   recon_ctx: 20
   validation: 0

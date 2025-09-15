@@ -1,7 +1,7 @@
 dataset:
-  name: Lorenz_Official
+  name: seismo
   pair_id:
-  - 6
+  - 4
 model:
   name: moirai
   recon_ctx: 20
