@@ -4,7 +4,7 @@ top_dir = Path(__file__).parent.parent
 
 bash_template_0 = \
 """\
-repo="/home/alexey/Git/CTF-for-Science/models/moirai"
+repo="/home/alexey/Git/ctf4science/models/moirai"
 
 # Create logs directory and set up logging
 mkdir -p $repo/logs
@@ -20,7 +20,7 @@ source /home/alexey/.virtualenvs/moirai/bin/activate
 
 bash_template_1 = \
 """\
-python -u $repo/ctf/forecast_ctf.py --dataset "{dataset}" --pair_id "{pair_id}" --recon_ctx "{recon_ctx}" --validation "{validation}" --identifier "{identifier}" --device "{device}"
+time python -u $repo/ctf/forecast_ctf.py --dataset "{dataset}" --pair_id "{pair_id}" --recon_ctx "{recon_ctx}" --validation "{validation}" --identifier "{identifier}" --device "{device}"
 
 """
 
@@ -45,7 +45,7 @@ for file in bash_dir.glob('*.sh'):
     file.unlink()
 
 device_counter = 0
-devices = ["cuda:0", "cuda:1"]
+devices = ["cuda:2", "cuda:3"]
 total_scripts = len(devices) * n_parallel
 
 # Initialize bash scripts for each device and parallel index
