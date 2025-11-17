@@ -20,7 +20,7 @@ source /home/alexey/.virtualenvs/moirai/bin/activate
 
 bash_template_1 = \
 """\
-time python -u $repo/ctf/forecast_ctf.py --dataset "{dataset}" --pair_id "{pair_id}" --recon_ctx "{recon_ctx}" --validation "{validation}" --identifier "{identifier}" --device "{device}"
+time python -u $repo/ctf/forecast_ctf.py --dataset "{dataset}" --pair_id "{pair_id}" --recon_ctx "{recon_ctx}" --validation "{validation}" --identifier "{identifier}" --device "{device}" --max_time_hours "{max_time_hours}"
 
 """
 
@@ -32,11 +32,12 @@ echo "Finished running Python"
 
 # Parameters
 n_parallel = 2
-datasets = ["seismo"]
+datasets = ["ocean_das"]
 pair_ids = [1, 2, 3, 4, 5, 6, 7, 8, 9]
-seeds = [1, 2, 3, 4, 5]
+seeds = [1]
 validation = 0
 recon_ctx = 50
+max_time_hours = 8
 
 # Create and clean up bash repo
 bash_dir = top_dir / 'bash'
@@ -45,7 +46,7 @@ for file in bash_dir.glob('*.sh'):
     file.unlink()
 
 device_counter = 0
-devices = ["cuda:2", "cuda:3"]
+devices = ["cuda:2"]
 total_scripts = len(devices) * n_parallel
 
 # Initialize bash scripts for each device and parallel index
@@ -75,6 +76,7 @@ for dataset in datasets:
                 validation=validation,
                 identifier=identifier,
                 device=current_device,
+                max_time_hours=max_time_hours,
             )
 
             # Add the command to the appropriate bash script

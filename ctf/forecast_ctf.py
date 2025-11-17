@@ -4,6 +4,7 @@
 
 # ## Imports
 
+import sys
 import time
 import torch
 import pickle
@@ -29,6 +30,9 @@ pickle_dir = top_dir / 'pickles'
 pickle_dir.mkdir(parents=True, exist_ok=True)
 
 def main(args=None):
+    # Start timing from the beginning of main
+    main_start_time = time.time()
+    
     # ## Model Parameters
 
     print("> Setting up model parameters")
@@ -102,14 +106,22 @@ def main(args=None):
     forecast_loops = forecast_length // PDT + (forecast_length % PDT > 0)
     raw_preds = []
     for i in range(forecast_loops):
+        # Check if max time has been exceeded
+        if args.max_time_hours is not None:
+            elapsed_hours = (time.time() - main_start_time) / 3600.0
+            if elapsed_hours > args.max_time_hours:
+                print(f"> Maximum time of {args.max_time_hours} hours exceeded ({elapsed_hours:.2f} hours elapsed)")
+                print(f"> Exiting after {i} iterations (out of {forecast_loops})")
+                sys.exit(1)
+        
         print(f"> ({i+1}/{forecast_loops}) Input Shape:", df.shape)
 
         # Append TEST (forecast_length) of zeros to each column of the dataset
         df_test = pd.concat([df, pd.DataFrame(0.*np.ones((TEST, df.shape[1])), columns=df.columns)], axis=0)
 
         # Create DateTimeIndex starting from 0 seconds with delta_t intervals
-        start_time = pd.Timestamp('2020-01-01')  
-        timestamps = pd.date_range(start=start_time, 
+        start_time_tmp = pd.Timestamp('2020-01-01')  
+        timestamps = pd.date_range(start=start_time_tmp, 
                                     periods=len(df_test),
                                     freq=f'{delta_t}S')
         df_test.index = timestamps
@@ -218,6 +230,7 @@ if __name__ == '__main__':
     parser.add_argument('--recon_ctx', type=int, default=20, help="Context length for reconstruction")
     parser.add_argument('--validation', type=int, default=0, help="Generate and use validation set")
     parser.add_argument('--device', type=str, default='cpu', help="Device to run on (cpu, cuda:0, ...)")
+    parser.add_argument('--max_time_hours', type=float, default=None, help="Maximum time in hours for the forecast loop")
     args = parser.parse_args()
 
     # Args
