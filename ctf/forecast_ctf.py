@@ -22,6 +22,7 @@ from huggingface_hub import hf_hub_download
 from uni2ts.eval_util.plot import plot_single
 from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
 from uni2ts.model.moirai_moe import MoiraiMoEForecast, MoiraiMoEModule
+from uni2ts.model.moirai2 import Moirai2Forecast, Moirai2Module
 
 from ctf4science.data_module import load_validation_dataset, load_dataset, get_prediction_timesteps, get_validation_prediction_timesteps, get_validation_training_timesteps, get_metadata
 
@@ -37,7 +38,7 @@ def main(args=None):
 
     print("> Setting up model parameters")
 
-    MODEL = "moirai-moe"  # model name: choose from {'moirai', 'moirai-moe'}
+    MODEL = args.model  # model name: choose from {'moirai', 'moirai-moe'}
     SIZE = "base"  # model size: choose from {'small', 'base', 'large'}
     #PDT = 20  # prediction length: any positive integer
     #CTX = 200  # context length: any positive integer
@@ -92,9 +93,14 @@ def main(args=None):
         raise ValueError(f"Pair id {pair_id} not supported")
 
     # Model variables
-    PDT = 5
-    CTX = min(df.shape[0], recon_ctx)
-    TEST = 5
+    if MODEL == "moirai2":
+        PDT = 100
+        CTX = min(df.shape[0], recon_ctx)
+        TEST = 100
+    else:
+        PDT = 10
+        CTX = min(df.shape[0], recon_ctx)
+        TEST = 10
 
     print("> Model variables:")
     print(f"  PDT: {PDT}")
@@ -130,61 +136,71 @@ def main(args=None):
 
         # ## Run Model
 
-        # Group time series into multivariate dataset
-        grouper = MultivariateGrouper(len(ds))
-        multivar_ds = grouper(ds)
-
-        # Split into train/test set
-        _, test_template = split(
-            multivar_ds, offset=-TEST
-        )  # assign last TEST time steps as test set
-
-        # Construct rolling window evaluation
-        test_data = test_template.generate_instances(
-            prediction_length=PDT,  # number of time steps for each prediction
-            windows=TEST // PDT,  # number of windows in rolling window evaluation
-            distance=PDT,  # number of time steps between each window - distance=PDT for non-overlapping windows
-        )
-
-        # Prepare model
-        if MODEL == "moirai":
-            model = MoiraiForecast(
-                module=MoiraiModule.from_pretrained(f"Salesforce/moirai-1.1-R-base"),
+        if MODEL == "moirai2":
+            # Univariate: forecast each channel independently
+            _, test_template = split(ds, offset=-TEST)
+            test_data = test_template.generate_instances(
+                prediction_length=PDT,
+                windows=TEST // PDT,
+                distance=PDT,
+            )
+            model = Moirai2Forecast(
+                module=Moirai2Module.from_pretrained("Salesforce/moirai-2.0-R-small"),
                 prediction_length=PDT,
                 context_length=CTX,
-                patch_size=PSZ,
-                num_samples=100,
-                target_dim=len(ds),
+                target_dim=1,
                 feat_dynamic_real_dim=ds.num_feat_dynamic_real,
                 past_feat_dynamic_real_dim=ds.num_past_feat_dynamic_real,
             )
-        elif MODEL == "moirai-moe":
-            model = MoiraiMoEForecast(
-                module=MoiraiMoEModule.from_pretrained(f"Salesforce/moirai-moe-1.0-R-base"),
+            predictor = model.create_predictor(batch_size=BSZ, device=args.device)
+            forecasts = list(predictor.predict(test_data.input))
+            raw_pred = np.stack([f.quantile(0.5) for f in forecasts], axis=1)
+            del model, predictor, forecasts, test_data, test_template
+        else:
+            # Multivariate: group all channels into one time series
+            grouper = MultivariateGrouper(len(ds))
+            multivar_ds = grouper(ds)
+            _, test_template = split(multivar_ds, offset=-TEST)
+            test_data = test_template.generate_instances(
                 prediction_length=PDT,
-                context_length=CTX,
-                patch_size=16,
-                num_samples=100,
-                target_dim=len(ds),
-                feat_dynamic_real_dim=ds.num_feat_dynamic_real,
-                past_feat_dynamic_real_dim=ds.num_past_feat_dynamic_real,
+                windows=TEST // PDT,
+                distance=PDT,
             )
+            if MODEL == "moirai":
+                model = MoiraiForecast(
+                    module=MoiraiModule.from_pretrained(f"Salesforce/moirai-1.1-R-base"),
+                    prediction_length=PDT,
+                    context_length=CTX,
+                    patch_size=PSZ,
+                    num_samples=100,
+                    target_dim=len(ds),
+                    feat_dynamic_real_dim=ds.num_feat_dynamic_real,
+                    past_feat_dynamic_real_dim=ds.num_past_feat_dynamic_real,
+                )
+            elif MODEL == "moirai-moe":
+                model = MoiraiMoEForecast(
+                    module=MoiraiMoEModule.from_pretrained(f"Salesforce/moirai-moe-1.0-R-base"),
+                    prediction_length=PDT,
+                    context_length=CTX,
+                    patch_size=16,
+                    num_samples=100,
+                    target_dim=len(ds),
+                    feat_dynamic_real_dim=ds.num_feat_dynamic_real,
+                    past_feat_dynamic_real_dim=ds.num_past_feat_dynamic_real,
+                )
+            predictor = model.create_predictor(batch_size=BSZ, device=args.device)
+            forecasts = predictor.predict(test_data.input)
+            forecast_it = iter(forecasts)
+            forecast = next(forecast_it)
+            raw_pred = forecast.quantile(0.5)
+            del model, predictor, forecasts, test_data, test_template, grouper, multivar_ds, forecast_it, forecast
 
-        # ## Forecast
-        predictor = model.create_predictor(batch_size=BSZ, device=args.device)
-        forecasts = predictor.predict(test_data.input)
-
-        # ## Create Prediction Matrix
-        forecast_it = iter(forecasts)
-        forecast = next(forecast_it)
-        raw_pred = forecast.quantile(0.5)
         raw_preds.append(raw_pred)
 
         # ## Append to df
         df = pd.concat([df, pd.DataFrame(raw_pred, columns=df.columns)], axis=0)
 
-        # Delete variables
-        del model, predictor, forecasts, test_data, test_template, grouper, multivar_ds, forecast_it, forecast, raw_pred
+        del raw_pred
 
     raw_pred = np.concatenate(raw_preds, axis=0)
     raw_pred = raw_pred[0:forecast_length, :]
@@ -229,6 +245,7 @@ if __name__ == '__main__':
     parser.add_argument('--recon_ctx', type=int, default=20, help="Context length for reconstruction")
     parser.add_argument('--validation', type=int, default=0, help="Generate and use validation set")
     parser.add_argument('--device', type=str, default='cpu', help="Device to run on (cpu, cuda:0, ...)")
+    parser.add_argument('--model', type=str, default='moirai2', help="Model to run (moirai, moirai-moe, moirai2)")
     parser.add_argument('--max_time_hours', type=float, default=None, help="Maximum time in hours for the forecast loop")
     args = parser.parse_args()
 
