@@ -87,15 +87,14 @@ def main(args=None):
         # Burn-in
         print(f"> Burn-in matrix of size {init_data.shape[0]}, using {forecast_length} forecast length")
         train_mat = init_data
-        forecast_length = forecast_length - init_data.shape[0]
         df = pd.DataFrame(train_mat)
     else:
         raise ValueError(f"Pair id {pair_id} not supported")
 
     # Model variables
-    PDT = 10
+    PDT = 5
     CTX = min(df.shape[0], recon_ctx)
-    TEST = 10
+    TEST = 5
 
     print("> Model variables:")
     print(f"  PDT: {PDT}")
@@ -203,7 +202,7 @@ def main(args=None):
         pred = raw_pred
     elif pair_id in [8, 9]:
         # Burn-in
-        pred = np.vstack([train_mat, raw_pred])
+        pred = raw_pred
     else:
         raise ValueError(f"Pair id {pair_id} not supported") 
 
@@ -212,7 +211,7 @@ def main(args=None):
     if args.validation:
         print("> Expected Shape: ", val_data.shape)
     else:
-        if dataset in ['seismo', 'ocean_das']:
+        if dataset in ['seismo', 'ocean_das', 'msfr']:
             print("> Expected Shape: ", md['matrix_shapes'][f'X{pair_id}test.npz'])
         else:
             print("> Expected Shape: ", md['matrix_shapes'][f'X{pair_id}test.mat'])

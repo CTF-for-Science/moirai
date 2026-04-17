@@ -31,13 +31,13 @@ echo "Finished running Python"
 """
 
 # Parameters
-n_parallel = 2
-datasets = ["ocean_das"]
+n_parallel = 1
+datasets = ["msfr"]
 pair_ids = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 seeds = [1]
 validation = 0
-recon_ctx = 50
-max_time_hours = 8
+recon_ctx = 5
+max_time_hours = 16
 
 # Create and clean up bash repo
 bash_dir = top_dir / 'bash'
