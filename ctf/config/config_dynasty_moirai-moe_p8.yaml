@@ -1,0 +1,11 @@
+dataset:
+  name: dynasty
+  pair_id:
+  - 8
+model:
+  name: moirai
+  variant: moirai-moe
+  recon_ctx: 50
+  validation: 0
+  device: cuda
+  batch_size: 32

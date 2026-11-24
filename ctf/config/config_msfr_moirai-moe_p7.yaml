@@ -1,0 +1,11 @@
+dataset:
+  name: msfr
+  pair_id:
+  - 7
+model:
+  name: moirai
+  variant: moirai-moe
+  recon_ctx: 50
+  validation: 0
+  device: cuda
+  batch_size: 32

@@ -3,6 +3,7 @@
 # CTF Notes
 
 Code for CTF is in the `ctf` folder.  
+The `moirai2` variant requires `uni2ts>=2.0` from PyPI (`pip install "uni2ts>=2.0"`); the bundled `src/uni2ts` (v1.2.0) does not include Moirai-2.
 
 ```bash
 pyenv install 3.10.13

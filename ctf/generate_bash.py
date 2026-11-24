@@ -20,7 +20,7 @@ source /home/alexey/.virtualenvs/moirai/bin/activate
 
 bash_template_1 = \
 """\
-time python -u $repo/ctf/forecast_ctf.py --dataset "{dataset}" --pair_id "{pair_id}" --recon_ctx "{recon_ctx}" --validation "{validation}" --identifier "{identifier}" --device "{device}" --max_time_hours "{max_time_hours}" --model "{model}"
+time python -u $repo/ctf/forecast_ctf.py --dataset "{dataset}" --pair_id "{pair_id}" --recon_ctx "{recon_ctx}" --validation "{validation}" --identifier "{identifier}" --device "{device}" --max_time_hours "{max_time_hours}" --model "{model}" --batch_size "{batch_size}"
 
 """
 
@@ -32,8 +32,10 @@ echo "Finished running Python"
 
 # Parameters
 n_parallel = 1
-datasets = ["msfr"]
-models = ["moirai2"]
+datasets = ["pke-hpmr", "dynasty", "msfr", "mhd-2cyls"]
+models = ["moirai-moe", "moirai2"]
+# Keep in sync with generate_configs.py
+batch_sizes = {"pke-hpmr": 32, "dynasty": 32, "msfr": 512, "mhd-2cyls": 512}  # moirai2 only
 pair_ids = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 seeds = [1]
 validation = 0
@@ -80,6 +82,7 @@ for model in models:
                     device=current_device,
                     max_time_hours=max_time_hours,
                     model=model,
+                    batch_size=batch_sizes[dataset] if model == "moirai2" else 32,
                 )
 
                 # Add the command to the appropriate bash script
@@ -105,6 +108,6 @@ for script_key, script_content in bash_scripts.items():
     
     print(f"Generated bash script: {filepath}")
 
-print(f"Total jobs: {len(datasets) * len(pair_ids) * len(seeds)}")
+print(f"Total jobs: {len(models) * len(datasets) * len(pair_ids) * len(seeds)}")
 print(f"Total scripts generated: {total_scripts}")
-print(f"Jobs per script: ~{len(datasets) * len(pair_ids) * len(seeds) // total_scripts} (with remainder distributed)")
+print(f"Jobs per script: ~{len(models) * len(datasets) * len(pair_ids) * len(seeds) // total_scripts} (with remainder distributed)")

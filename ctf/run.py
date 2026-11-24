@@ -37,7 +37,10 @@ def main(config_path: str) -> None:
     dataset_name = config['dataset']['name']
     pair_ids = parse_pair_ids(config['dataset'])
 
-    model_name = f"{config['model']['name']}"
+    # Variant selects the uni2ts model: 'moirai', 'moirai-moe' or 'moirai2'.
+    # Configs without a variant keep the previous behaviour (forecast_ctf.py default: moirai2).
+    variant = config['model'].get('variant', 'moirai2')
+    model_name = f"{config['model']['name']}_{variant}" if 'variant' in config['model'] else f"{config['model']['name']}"
 
     # Generate a unique batch_id for this run
     # Define the name of the output folder for your batch
@@ -70,9 +73,14 @@ def main(config_path: str) -> None:
         --pair_id {pair_id}\
         --recon_ctx {recon_ctx}\
         --validation {validation}\
+        --model {variant}\
+        --device {device}\
+        --batch_size {batch_size}\
+        {max_time_arg}\
         """
 
-        identifier = f"{dataset_name}_{pair_id}"
+        identifier = f"{dataset_name}_{pair_id}_{variant}"
+        max_time_hours = config['model'].get('max_time_hours', None)
 
         cmd_formatted_1 = cmd_1.format(
             moirai_main_path = file_dir / "forecast_ctf.py",
@@ -81,6 +89,10 @@ def main(config_path: str) -> None:
             pair_id = pair_id,
             recon_ctx = config['model']['recon_ctx'],
             validation = config['model']['validation'],
+            variant = variant,
+            device = config['model'].get('device', 'cpu'),
+            batch_size = config['model'].get('batch_size', 32),
+            max_time_arg = f"--max_time_hours {max_time_hours}" if max_time_hours is not None else "",
         )
 
         # Execute command 1

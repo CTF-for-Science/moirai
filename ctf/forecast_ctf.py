@@ -22,9 +22,11 @@ from huggingface_hub import hf_hub_download
 from uni2ts.eval_util.plot import plot_single
 from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
 from uni2ts.model.moirai_moe import MoiraiMoEForecast, MoiraiMoEModule
-from uni2ts.model.moirai2 import Moirai2Forecast, Moirai2Module
+# NOTE: uni2ts.model.moirai2 is imported lazily (only for --model moirai2) because the
+# vendored uni2ts in this repo (src/uni2ts, v1.2.0) does not ship Moirai-2; it needs an
+# external uni2ts>=2.0 install. A module-level import would break moirai/moirai-moe.
 
-from ctf4science.data_module import load_validation_dataset, load_dataset, get_prediction_timesteps, get_validation_prediction_timesteps, get_validation_training_timesteps, get_metadata
+from ctf4science.data_module import load_validation_dataset, load_dataset, get_prediction_timesteps, get_validation_prediction_timesteps, get_validation_training_timesteps, get_metadata, get_config
 
 top_dir = Path(__file__).parent.parent
 pickle_dir = top_dir / 'pickles'
@@ -38,12 +40,14 @@ def main(args=None):
 
     print("> Setting up model parameters")
 
-    MODEL = args.model  # model name: choose from {'moirai', 'moirai-moe'}
+    MODEL = args.model  # model name: choose from {'moirai', 'moirai-moe', 'moirai2'}
+    if MODEL not in ("moirai", "moirai-moe", "moirai2"):
+        raise ValueError(f"Unknown model {MODEL}")
     SIZE = "base"  # model size: choose from {'small', 'base', 'large'}
     #PDT = 20  # prediction length: any positive integer
     #CTX = 200  # context length: any positive integer
     PSZ = "auto"  # patch size: choose from {"auto", 8, 16, 32, 64, 128}
-    BSZ = 32  # batch size: any positive integer
+    BSZ = args.batch_size  # batch size: any positive integer
     #TEST = 100  # test set length: any positive integer
 
     # ## Data
@@ -107,6 +111,19 @@ def main(args=None):
     print(f"  CTX: {CTX}")
     print(f"  TEST: {TEST}")
 
+    # Only the last CTX rows are ever seen by the model, so keep a rolling window of CTX rows.
+    # This avoids copying the full (up to 2000 x 122400) history every loop iteration.
+    df = df.iloc[-CTX:].reset_index(drop=True)
+
+    # Load pretrained weights once (previously re-loaded on every loop iteration)
+    if MODEL == "moirai2":
+        from uni2ts.model.moirai2 import Moirai2Forecast, Moirai2Module
+        module = Moirai2Module.from_pretrained("Salesforce/moirai-2.0-R-small")
+    elif MODEL == "moirai":
+        module = MoiraiModule.from_pretrained(f"Salesforce/moirai-1.1-R-base")
+    else:
+        module = MoiraiMoEModule.from_pretrained(f"Salesforce/moirai-moe-1.0-R-base")
+
     # Loop until we have forecast_length data points
     forecast_loops = forecast_length // PDT + (forecast_length % PDT > 0)
     raw_preds = []
@@ -131,12 +148,11 @@ def main(args=None):
                                     freq=f'{delta_t}S')
         df_test.index = timestamps
 
-        # Convert into GluonTS dataset with frequency in seconds
-        ds = PandasDataset(dict(df_test), freq=f'{delta_t}S')
-
         # ## Run Model
 
         if MODEL == "moirai2":
+            # Convert into GluonTS dataset with frequency in seconds
+            ds = PandasDataset(dict(df_test), freq=f'{delta_t}S')
             # Univariate: forecast each channel independently
             _, test_template = split(ds, offset=-TEST)
             test_data = test_template.generate_instances(
@@ -145,7 +161,7 @@ def main(args=None):
                 distance=PDT,
             )
             model = Moirai2Forecast(
-                module=Moirai2Module.from_pretrained("Salesforce/moirai-2.0-R-small"),
+                module=module,
                 prediction_length=PDT,
                 context_length=CTX,
                 target_dim=1,
@@ -155,9 +171,11 @@ def main(args=None):
             predictor = model.create_predictor(batch_size=BSZ, device=args.device)
             forecasts = list(predictor.predict(test_data.input))
             raw_pred = np.stack([f.quantile(0.5) for f in forecasts], axis=1)
-            del model, predictor, forecasts, test_data, test_template
+            del model, predictor, forecasts, test_data, test_template, ds
         else:
             # Multivariate: group all channels into one time series
+            # Convert into GluonTS dataset with frequency in seconds
+            ds = PandasDataset(dict(df_test), freq=f'{delta_t}S')
             grouper = MultivariateGrouper(len(ds))
             multivar_ds = grouper(ds)
             _, test_template = split(multivar_ds, offset=-TEST)
@@ -168,7 +186,7 @@ def main(args=None):
             )
             if MODEL == "moirai":
                 model = MoiraiForecast(
-                    module=MoiraiModule.from_pretrained(f"Salesforce/moirai-1.1-R-base"),
+                    module=module,
                     prediction_length=PDT,
                     context_length=CTX,
                     patch_size=PSZ,
@@ -179,7 +197,7 @@ def main(args=None):
                 )
             elif MODEL == "moirai-moe":
                 model = MoiraiMoEForecast(
-                    module=MoiraiMoEModule.from_pretrained(f"Salesforce/moirai-moe-1.0-R-base"),
+                    module=module,
                     prediction_length=PDT,
                     context_length=CTX,
                     patch_size=16,
@@ -193,12 +211,12 @@ def main(args=None):
             forecast_it = iter(forecasts)
             forecast = next(forecast_it)
             raw_pred = forecast.quantile(0.5)
-            del model, predictor, forecasts, test_data, test_template, grouper, multivar_ds, forecast_it, forecast
+            del model, predictor, forecasts, test_data, test_template, grouper, multivar_ds, forecast_it, forecast, ds
 
         raw_preds.append(raw_pred)
 
         # ## Append to df
-        df = pd.concat([df, pd.DataFrame(raw_pred, columns=df.columns)], axis=0)
+        df = pd.concat([df, pd.DataFrame(raw_pred, columns=df.columns)], axis=0).iloc[-CTX:].reset_index(drop=True)
 
         del raw_pred
 
@@ -227,10 +245,9 @@ def main(args=None):
     if args.validation:
         print("> Expected Shape: ", val_data.shape)
     else:
-        if dataset in ['seismo', 'ocean_das', 'msfr']:
-            print("> Expected Shape: ", md['matrix_shapes'][f'X{pair_id}test.npz'])
-        else:
-            print("> Expected Shape: ", md['matrix_shapes'][f'X{pair_id}test.mat'])
+        # Look up the test file name (.mat or .npz) from the dataset config instead of hardcoding it
+        test_name = next(p for p in get_config(dataset)['pairs'] if p['id'] == pair_id)['test']
+        print("> Expected Shape: ", md['matrix_shapes'][test_name])
 
     # ## Save prediction matrix
     with open(pickle_dir / f"{args.identifier}.pkl", "wb") as f:
@@ -246,6 +263,7 @@ if __name__ == '__main__':
     parser.add_argument('--validation', type=int, default=0, help="Generate and use validation set")
     parser.add_argument('--device', type=str, default='cpu', help="Device to run on (cpu, cuda:0, ...)")
     parser.add_argument('--model', type=str, default='moirai2', help="Model to run (moirai, moirai-moe, moirai2)")
+    parser.add_argument('--batch_size', type=int, default=32, help="Predictor batch size (moirai2 batches over channels)")
     parser.add_argument('--max_time_hours', type=float, default=None, help="Maximum time in hours for the forecast loop")
     args = parser.parse_args()
 
